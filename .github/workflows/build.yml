@@ -37,10 +37,10 @@ jobs:
 
     steps:
       - name: Checkout build scripts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout zigbee-herdsman-converters
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ inputs.converters_repo }}
           ref: ${{ inputs.converters_ref }}
