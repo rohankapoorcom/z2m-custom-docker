@@ -2,7 +2,7 @@
 
 Build a Zigbee2MQTT Docker image using a custom branch of [zigbee-herdsman-converters](https://github.com/Koenkk/zigbee-herdsman-converters).
 
-The build script clones the official Zigbee2MQTT repo, swaps in your converters build, patches the Dockerfile, and produces a ready-to-run Docker image.
+The build script swaps in your converters build, patches the Dockerfile, and produces a ready-to-run Docker image.
 
 ## Prerequisites
 
@@ -10,12 +10,15 @@ The build script clones the official Zigbee2MQTT repo, swaps in your converters 
 - pnpm 10
 - jq
 - Docker
-- git
 
 ## Local usage
 
 ```bash
-CONVERTERS_DIR=/path/to/zigbee-herdsman-converters ./build.sh
+CONVERTERS_DIR=/path/to/zigbee-herdsman-converters \
+CONVERTERS_REPO=your-username/zigbee-herdsman-converters \
+CONVERTERS_REF=my-branch \
+Z2M_DIR=/path/to/zigbee2mqtt \
+  ./build.sh
 ```
 
 This produces a Docker image tagged `zigbee2mqtt:custom-converters` by default.
@@ -25,18 +28,20 @@ This produces a Docker image tagged `zigbee2mqtt:custom-converters` by default.
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `CONVERTERS_DIR` | Yes | -- | Path to your zigbee-herdsman-converters checkout |
-| `Z2M_REPO` | No | `Koenkk/zigbee2mqtt` | Zigbee2MQTT repo (`owner/repo` or full URL) |
-| `Z2M_REF` | No | `master` | Zigbee2MQTT branch or tag to build from |
-| `DOCKER_TAG` | No | `zigbee2mqtt:custom-converters` | Tag applied to the built image |
-| `WORK_DIR` | No | `./build` | Scratch directory for the z2m clone |
+| `CONVERTERS_REPO` | Yes | -- | Converters repo (`owner/repo`), used to stamp the version |
+| `CONVERTERS_REF` | Yes | -- | Converters branch or tag, used to stamp the version |
+| `Z2M_DIR` | Yes | -- | Path to your zigbee2mqtt checkout |
+| `DOCKER_TAG` | No | `zigbee2mqtt:<repo>.<branch>` | Tag applied to the built image (derived from converters repo/ref) |
 
 ### Examples
 
-Build against a specific Zigbee2MQTT release:
+Build with a custom tag:
 
 ```bash
 CONVERTERS_DIR=../zigbee-herdsman-converters \
-Z2M_REF=2.9.1 \
+CONVERTERS_REPO=your-username/zigbee-herdsman-converters \
+CONVERTERS_REF=my-branch \
+Z2M_DIR=../zigbee2mqtt \
 DOCKER_TAG=zigbee2mqtt:my-test \
   ./build.sh
 ```
@@ -49,7 +54,7 @@ docker run -v /path/to/data:/app/data -p 8080:8080 zigbee2mqtt:custom-converters
 
 ## GitHub Actions
 
-The included workflow at `.github/workflows/build.yml` lets you trigger builds from the GitHub UI or CLI without any local tooling.
+The included workflow at `.github/workflows/build.yml` lets you trigger builds from the GitHub UI or CLI without any local tooling. It handles checking out both repositories for you.
 
 ### Trigger from the UI
 
@@ -61,7 +66,6 @@ Go to **Actions > Build Zigbee2MQTT with Custom Converters > Run workflow** and 
 | `converters_ref` | `master` | Branch or tag to build |
 | `z2m_repo` | `Koenkk/zigbee2mqtt` | Zigbee2MQTT repo (`owner/repo`) |
 | `z2m_ref` | `master` | Zigbee2MQTT branch or tag |
-| `docker_tag` | `zigbee2mqtt:custom-converters` | Image tag used during build |
 | `push_ghcr` | `true` | Push the image to GitHub Container Registry |
 
 ### Trigger from the CLI
@@ -75,22 +79,26 @@ gh workflow run build.yml \
 
 ### Publishing to GHCR
 
+Docker image tags are derived from the converters repo and branch. For example, with `converters_repo=rohankapoorcom/zigbee-herdsman-converters` and `converters_ref=inovelli-lib-cleanup`:
+
+- Local: `zigbee2mqtt:rohankapoorcom.zigbee-herdsman-converters.inovelli-lib-cleanup`
+- GHCR: `ghcr.io/<repo-owner>/zigbee2mqtt-custom:rohankapoorcom.zigbee-herdsman-converters.inovelli-lib-cleanup-20260328-153000`
+
 When `push_ghcr` is enabled, the workflow pushes the image to:
 
 ```
-ghcr.io/<repo-owner>/zigbee2mqtt-custom:<timestamp>
+ghcr.io/<repo-owner>/zigbee2mqtt-custom:<repo>.<branch>-<timestamp>
 ```
 
 The `GITHUB_TOKEN` is used for authentication, so no additional secrets are needed. Make sure the repository's **Settings > Actions > General > Workflow permissions** is set to "Read and write permissions" if you want to push packages.
 
 ## How it works
 
-`build.sh` performs five steps:
+`build.sh` performs four steps:
 
-1. **Clone Zigbee2MQTT** at the requested ref (shallow clone).
-2. **Build and pack converters** -- runs `pnpm install` and `pnpm pack` in your converters checkout, producing a `.tgz` tarball.
-3. **Patch Zigbee2MQTT** -- rewrites `package.json` to point `zigbee-herdsman-converters` at the local tarball, and updates the Dockerfile to include it.
-4. **Build Zigbee2MQTT** -- regenerates the lockfile and compiles TypeScript.
-5. **Build Docker image** -- runs `docker build` using the patched Dockerfile.
+1. **Build and pack converters** -- runs `pnpm install` and `pnpm pack` in your converters checkout, producing a `.tgz` tarball.
+2. **Patch Zigbee2MQTT** -- rewrites `package.json` to point `zigbee-herdsman-converters` at the local tarball, and updates the Dockerfile to include it.
+3. **Build Zigbee2MQTT** -- regenerates the lockfile and compiles TypeScript.
+4. **Build Docker image** -- runs `docker build` using the patched Dockerfile.
 
-All intermediate files are written to `WORK_DIR` (default `./build`), keeping your source trees clean.
+The GitHub Actions workflow handles checking out both repositories before invoking the script.

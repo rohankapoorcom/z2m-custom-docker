@@ -19,10 +19,6 @@ on:
         description: "Zigbee2MQTT branch or tag"
         required: true
         default: "master"
-      docker_tag:
-        description: "Local Docker image tag"
-        required: true
-        default: "zigbee2mqtt:custom-converters"
       push_ghcr:
         description: "Push image to GitHub Container Registry"
         type: boolean
@@ -46,6 +42,13 @@ jobs:
           ref: ${{ inputs.converters_ref }}
           path: zigbee-herdsman-converters
 
+      - name: Checkout zigbee2mqtt
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.z2m_repo }}
+          ref: ${{ inputs.z2m_ref }}
+          path: zigbee2mqtt
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -56,12 +59,22 @@ jobs:
         with:
           version: 10
 
+      - name: Derive Docker tag
+        id: tag
+        run: |
+          SANITIZED="$(echo "${{ inputs.converters_repo }}/${{ inputs.converters_ref }}" | sed 's|/|.|g; s|[^a-zA-Z0-9.\-]|-|g' | tr '[:upper:]' '[:lower:]')"
+          LOCAL_TAG="zigbee2mqtt:${SANITIZED}"
+          GHCR_TAG="ghcr.io/${{ github.repository_owner }}/zigbee2mqtt-custom:${SANITIZED}-$(date +%Y%m%d-%H%M%S)"
+          echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
+          echo "ghcr_tag=$GHCR_TAG" >> "$GITHUB_OUTPUT"
+
       - name: Build Docker image
         env:
           CONVERTERS_DIR: ${{ github.workspace }}/zigbee-herdsman-converters
-          Z2M_REPO: ${{ inputs.z2m_repo }}
-          Z2M_REF: ${{ inputs.z2m_ref }}
-          DOCKER_TAG: ${{ inputs.docker_tag }}
+          CONVERTERS_REPO: ${{ inputs.converters_repo }}
+          CONVERTERS_REF: ${{ inputs.converters_ref }}
+          Z2M_DIR: ${{ github.workspace }}/zigbee2mqtt
+          DOCKER_TAG: ${{ steps.tag.outputs.local_tag }}
         run: ./build.sh
 
       - name: Login to GHCR
@@ -75,7 +88,6 @@ jobs:
       - name: Tag and push to GHCR
         if: ${{ inputs.push_ghcr }}
         run: |
-          GHCR_TAG="ghcr.io/${{ github.repository_owner }}/zigbee2mqtt-custom:$(date +%Y%m%d-%H%M%S)"
-          docker tag "${{ inputs.docker_tag }}" "$GHCR_TAG"
-          docker push "$GHCR_TAG"
-          echo "Pushed: $GHCR_TAG" >> "$GITHUB_STEP_SUMMARY"
+          docker tag "${{ steps.tag.outputs.local_tag }}" "${{ steps.tag.outputs.ghcr_tag }}"
+          docker push "${{ steps.tag.outputs.ghcr_tag }}"
+          echo "Pushed: ${{ steps.tag.outputs.ghcr_tag }}" >> "$GITHUB_STEP_SUMMARY"
