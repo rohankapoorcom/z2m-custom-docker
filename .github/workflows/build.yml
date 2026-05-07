@@ -3,6 +3,14 @@ name: Build Zigbee2MQTT with Custom Converters
 on:
   workflow_dispatch:
     inputs:
+      herdsman_repo:
+        description: "zigbee-herdsman repo (owner/repo)"
+        required: true
+        default: "Koenkk/zigbee-herdsman"
+      herdsman_ref:
+        description: "Herdsman branch or tag"
+        required: true
+        default: "master"
       converters_repo:
         description: "zigbee-herdsman-converters repo (owner/repo)"
         required: true
@@ -35,6 +43,13 @@ jobs:
       - name: Checkout build scripts
         uses: actions/checkout@v6
 
+      - name: Checkout zigbee-herdsman
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.herdsman_repo }}
+          ref: ${{ inputs.herdsman_ref }}
+          path: zigbee-herdsman
+
       - name: Checkout zigbee-herdsman-converters
         uses: actions/checkout@v6
         with:
@@ -62,7 +77,23 @@ jobs:
       - name: Derive Docker tag
         id: tag
         run: |
-          SANITIZED="$(echo "${{ inputs.converters_repo }}/${{ inputs.converters_ref }}" | sed 's|/|.|g; s|[^a-zA-Z0-9.\-]|-|g' | tr '[:upper:]' '[:lower:]')"
+          # Sanitize a "<repo>/<ref>" string for use as part of a Docker tag.
+          # Mirrors sanitize_tag_segment in build.sh: lowercase, [a-z0-9.-] only,
+          # truncated to 50 chars with an 8-char sha1 suffix when over-cap.
+          sanitize_segment() {
+            local raw="$1"
+            local sanitized
+            sanitized="$(echo "$raw" | sed 's|/|.|g; s|[^a-zA-Z0-9.\-]|-|g' | tr '[:upper:]' '[:lower:]')"
+            if [ "${#sanitized}" -gt 50 ]; then
+              local hash
+              hash="$(echo -n "$raw" | sha1sum | cut -c1-8)"
+              sanitized="${sanitized:0:41}-${hash}"
+            fi
+            echo "$sanitized"
+          }
+          CONV_SEG="$(sanitize_segment "${{ inputs.converters_repo }}/${{ inputs.converters_ref }}")"
+          HERD_SEG="$(sanitize_segment "${{ inputs.herdsman_repo }}/${{ inputs.herdsman_ref }}")"
+          SANITIZED="${CONV_SEG}__${HERD_SEG}"
           LOCAL_TAG="zigbee2mqtt:${SANITIZED}"
           GHCR_TAG="ghcr.io/${{ github.repository_owner }}/zigbee2mqtt-custom:${SANITIZED}-$(date +%Y%m%d-%H%M%S)"
           echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
@@ -70,6 +101,9 @@ jobs:
 
       - name: Build Docker image
         env:
+          HERDSMAN_DIR: ${{ github.workspace }}/zigbee-herdsman
+          HERDSMAN_REPO: ${{ inputs.herdsman_repo }}
+          HERDSMAN_REF: ${{ inputs.herdsman_ref }}
           CONVERTERS_DIR: ${{ github.workspace }}/zigbee-herdsman-converters
           CONVERTERS_REPO: ${{ inputs.converters_repo }}
           CONVERTERS_REF: ${{ inputs.converters_ref }}
