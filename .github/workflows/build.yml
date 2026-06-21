@@ -41,24 +41,24 @@ jobs:
 
     steps:
       - name: Checkout build scripts
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Checkout zigbee-herdsman
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ inputs.herdsman_repo }}
           ref: ${{ inputs.herdsman_ref }}
           path: zigbee-herdsman
 
       - name: Checkout zigbee-herdsman-converters
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ inputs.converters_repo }}
           ref: ${{ inputs.converters_ref }}
           path: zigbee-herdsman-converters
 
       - name: Checkout zigbee2mqtt
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ inputs.z2m_repo }}
           ref: ${{ inputs.z2m_ref }}
