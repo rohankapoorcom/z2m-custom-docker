@@ -128,9 +128,31 @@ jq --arg conv "file:./$CONVERTERS_TARBALL_NAME" \
 echo "Patched package.json -> zigbee-herdsman-converters: file:./$CONVERTERS_TARBALL_NAME"
 echo "Patched package.json -> zigbee-herdsman: file:./$HERDSMAN_TARBALL_NAME"
 
-# Dockerfile: include both tarballs in COPY and drop --frozen-lockfile
-sed -i 's|COPY package.json pnpm-lock.yaml \./|COPY package.json pnpm-lock.yaml zigbee-herdsman-*.tgz zigbee-herdsman-converters-*.tgz ./|' docker/Dockerfile
+# Dockerfile: include both tarballs in the deps COPY and drop --frozen-lockfile
+# so the image install can resolve the local file: dependencies. Current
+# zigbee2mqtt copies pnpm-workspace.yaml on that line; older checkouts do not.
+# Fail if neither form is present — a silent miss leaves the tarballs out of
+# the image and pnpm install dies with ENOENT.
+tarball_copy="zigbee-herdsman-*.tgz zigbee-herdsman-converters-*.tgz"
+deps_copy_with_workspace="COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./"
+deps_copy_without_workspace="COPY package.json pnpm-lock.yaml ./"
+if grep -Fq "$deps_copy_with_workspace" docker/Dockerfile; then
+    sed -i "s|$deps_copy_with_workspace|COPY package.json pnpm-lock.yaml pnpm-workspace.yaml $tarball_copy ./|" docker/Dockerfile
+elif grep -Fq "$deps_copy_without_workspace" docker/Dockerfile; then
+    sed -i "s|$deps_copy_without_workspace|COPY package.json pnpm-lock.yaml $tarball_copy ./|" docker/Dockerfile
+else
+    echo "Error: docker/Dockerfile has no recognized deps COPY of package.json and pnpm-lock.yaml" >&2
+    exit 1
+fi
+if ! grep -Fq "pnpm install --frozen-lockfile --prod" docker/Dockerfile; then
+    echo "Error: docker/Dockerfile has no 'pnpm install --frozen-lockfile --prod' to relax" >&2
+    exit 1
+fi
 sed -i 's|pnpm install --frozen-lockfile --prod|pnpm install --prod|' docker/Dockerfile
+if ! grep -Fq "zigbee-herdsman-*.tgz" docker/Dockerfile; then
+    echo "Error: docker/Dockerfile COPY was not updated to include the tarballs" >&2
+    exit 1
+fi
 echo "Patched docker/Dockerfile"
 echo "::endgroup::"
 
